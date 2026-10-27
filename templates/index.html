@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美甲图片匹配器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#EC4899',
+                        'on-primary': '#FFFFFF',
+                        secondary: '#F9A8D4',
+                        accent: '#8B5CF6',
+                        background: '#FDF2F8',
+                        foreground: '#831843',
+                        muted: '#F1EEF5',
+                        border: '#FBCFE8',
+                    },
+                    fontFamily: {
+                        sans: ['Noto Sans SC', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .drop-zone {
+            transition: all 0.3s ease;
+        }
+        .drop-zone.dragover {
+            border-color: #EC4899;
+            background-color: #FDF2F8;
+            transform: scale(1.02);
+        }
+        .result-card {
+            transition: all 0.2s ease;
+        }
+        .result-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(236, 72, 153, 0.15);
+        }
+        .similarity-bar {
+            transition: width 0.5s ease;
+        }
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .drop-zone, .result-card, .similarity-bar {
+                transition: none;
+            }
+            .loading-spinner {
+                animation: none;
+            }
+        }
+    </style>
+</head>
+<body class="bg-background min-h-screen font-sans">
+    <div class="max-w-6xl mx-auto px-4 py-8">
+        <header class="text-center mb-12">
+            <div class="flex justify-between items-center mb-4">
+                <div></div>
+                <a href="/admin" class="px-4 py-2 bg-white text-primary border border-primary rounded-lg hover:bg-muted transition-colors">
+                    货品管理
+                </a>
+            </div>
+            <h1 class="text-4xl font-bold text-foreground mb-2">美甲图片匹配器</h1>
+            <p class="text-lg text-primary/70">上传图片，找到相似款式的美甲</p>
+        </header>
+
+        <div class="bg-white rounded-2xl shadow-lg p-8 mb-8">
+            <div id="dropZone" class="drop-zone border-2 border-dashed border-border rounded-xl p-12 text-center cursor-pointer hover:border-primary hover:bg-muted/50">
+                <input type="file" id="fileInput" accept="image/*" class="hidden">
+                <div id="uploadPrompt">
+                    <svg class="w-16 h-16 mx-auto text-primary/50 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p class="text-lg text-foreground/70 mb-2">拖拽图片到这里，或点击上传</p>
+                    <p class="text-sm text-muted/50">支持 PNG、JPG、WEBP 格式</p>
+                </div>
+                <div id="previewContainer" class="hidden">
+                    <img id="previewImage" class="max-w-xs mx-auto rounded-lg shadow-md mb-4">
+                    <button id="clearBtn" class="px-4 py-2 bg-secondary/50 text-foreground rounded-lg hover:bg-secondary transition-colors">
+                        清除图片
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-center gap-4">
+                <button id="searchBtn" disabled class="px-8 py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                    <svg id="searchIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <svg id="loadingIcon" class="w-5 h-5 loading-spinner hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" stroke-width="2" stroke-dasharray="32" stroke-dashoffset="32" />
+                    </svg>
+                    <span id="searchText">搜索相似款式</span>
+                </button>
+                <select id="topK" class="px-4 py-3 border border-border rounded-xl bg-white text-foreground focus:border-primary focus:outline-none">
+                    <option value="5">显示 5 个结果</option>
+                    <option value="10" selected>显示 10 个结果</option>
+                    <option value="20">显示 20 个结果</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="resultsSection" class="hidden">
+            <h2 class="text-2xl font-bold text-foreground mb-6">搜索结果</h2>
+            <div id="resultsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            </div>
+        </div>
+
+        <div id="errorAlert" class="hidden bg-destructive/10 border border-destructive/30 rounded-xl p-4 mb-8">
+            <p id="errorMessage" class="text-destructive"></p>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const uploadPrompt = document.getElementById('uploadPrompt');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const clearBtn = document.getElementById('clearBtn');
+        const searchBtn = document.getElementById('searchBtn');
+        const searchIcon = document.getElementById('searchIcon');
+        const loadingIcon = document.getElementById('loadingIcon');
+        const searchText = document.getElementById('searchText');
+        const topK = document.getElementById('topK');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsGrid = document.getElementById('resultsGrid');
+        const errorAlert = document.getElementById('errorAlert');
+        const errorMessage = document.getElementById('errorMessage');
+
+        let selectedFile = null;
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        clearBtn.addEventListener('click', () => {
+            selectedFile = null;
+            previewImage.src = '';
+            uploadPrompt.classList.remove('hidden');
+            previewContainer.classList.add('hidden');
+            searchBtn.disabled = true;
+            resultsSection.classList.add('hidden');
+            errorAlert.classList.add('hidden');
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                showError('请上传图片文件');
+                return;
+            }
+
+            selectedFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                uploadPrompt.classList.add('hidden');
+                previewContainer.classList.remove('hidden');
+                searchBtn.disabled = false;
+                errorAlert.classList.add('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        searchBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            searchBtn.disabled = true;
+            searchIcon.classList.add('hidden');
+            loadingIcon.classList.remove('hidden');
+            searchText.textContent = '搜索中...';
+            errorAlert.classList.add('hidden');
+
+            const formData = new FormData();
+            formData.append('image', selectedFile);
+            formData.append('top_k', topK.value);
+
+            try {
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || '搜索失败');
+                }
+
+                displayResults(data.results);
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                searchBtn.disabled = false;
+                searchIcon.classList.remove('hidden');
+                loadingIcon.classList.add('hidden');
+                searchText.textContent = '搜索相似款式';
+            }
+        });
+
+        function displayResults(results) {
+            resultsGrid.innerHTML = '';
+            resultsSection.classList.remove('hidden');
+
+            results.forEach((result, index) => {
+                const similarityPercent = (result.similarity * 100).toFixed(1);
+                const similarityColor = result.similarity > 0.9 ? 'bg-primary' : 
+                                        result.similarity > 0.8 ? 'bg-accent' : 'bg-secondary';
+                
+                const card = document.createElement('div');
+                card.className = 'result-card bg-white rounded-xl shadow-md overflow-hidden';
+                card.innerHTML = `
+                    <div class="aspect-square bg-muted relative">
+                        <img src="/images/${result.image_path.split('/').pop()}" 
+                             alt="货号 ${result.item_code}"
+                             class="w-full h-full object-cover"
+                             loading="lazy">
+                        <div class="absolute top-2 right-2 bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 text-sm font-medium text-primary">
+                            #${index + 1}
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-bold text-lg text-foreground">${result.item_code}</span>
+                            <span class="text-primary font-medium">${result.price ? '¥' + result.price : '询价'}</span>
+                        </div>
+                        <p class="text-sm text-foreground/60 mb-3">${result.category}</p>
+                        <div class="mb-1 flex justify-between text-sm">
+                            <span class="text-foreground/50">相似度</span>
+                            <span class="font-medium text-foreground">${similarityPercent}%</span>
+                        </div>
+                        <div class="h-2 bg-muted rounded-full overflow-hidden">
+                            <div class="similarity-bar ${similarityColor} h-full rounded-full" 
+                                 style="width: ${similarityPercent}%"></div>
+                        </div>
+                    </div>
+                `;
+                resultsGrid.appendChild(card);
+            });
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorAlert.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

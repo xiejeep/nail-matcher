@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>货品管理 - 美甲图片匹配器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#EC4899',
+                        'on-primary': '#FFFFFF',
+                        secondary: '#F9A8D4',
+                        accent: '#8B5CF6',
+                        background: '#FDF2F8',
+                        foreground: '#831843',
+                        muted: '#F1EEF5',
+                        border: '#FBCFE8',
+                    },
+                    fontFamily: {
+                        sans: ['Noto Sans SC', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .modal-overlay {
+            transition: opacity 0.3s ease;
+        }
+        .modal-content {
+            transition: transform 0.3s ease;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .modal-overlay, .modal-content {
+                transition: none;
+            }
+        }
+    </style>
+</head>
+<body class="bg-background min-h-screen font-sans">
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <header class="mb-8">
+            <div class="flex justify-between items-center">
+                <h1 class="text-3xl font-bold text-foreground">货品管理</h1>
+                <div class="flex gap-4">
+                    <button onclick="openCategoryModal()" class="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors">
+                        分类管理
+                    </button>
+                    <a href="/" class="px-4 py-2 bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors">
+                        返回匹配器
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-8">
+            <div class="flex flex-wrap gap-4 mb-6">
+                <div class="flex-1 min-w-200px">
+                    <input type="text" id="searchInput" placeholder="搜索货号..." 
+                           class="w-full px-4 py-2 border border-border rounded-lg focus:border-primary focus:outline-none">
+                </div>
+                <select id="categoryFilter" class="px-4 py-2 border border-border rounded-lg focus:border-primary focus:outline-none">
+                    <option value="">所有分类</option>
+                </select>
+                <button onclick="openAddModal()" class="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                    添加货品
+                </button>
+                <button onclick="exportExcel()" class="px-6 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors">
+                    导出Excel(带图片)
+                </button>
+                <button onclick="exportExcelNoImages()" class="px-6 py-2 bg-accent/50 text-foreground rounded-lg hover:bg-accent/40 transition-colors">
+                    导出Excel(无图片)
+                </button>
+                <button onclick="exportCSV()" class="px-6 py-2 bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors">
+                    导出CSV
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-muted">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-foreground">图片</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-foreground">货号</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-foreground">分类</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-foreground">价格</th>
+                            <th class="px-4 py-3 text-left text-sm font-medium text-foreground">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsTable">
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="pagination" class="mt-6 flex justify-center gap-2"></div>
+        </div>
+    </div>
+
+    <div id="modalOverlay" class="modal-overlay fixed inset-0 bg-black/50 hidden opacity-0 flex items-center justify-center z-50">
+        <div class="modal-content bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 transform scale-95">
+            <div class="p-6">
+                <h2 id="modalTitle" class="text-xl font-bold text-foreground mb-6">添加货品</h2>
+                
+                <form id="itemForm">
+                    <input type="hidden" id="itemId">
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-foreground mb-2">货号 *</label>
+                        <input type="text" id="itemCode" required
+                               class="w-full px-4 py-2 border border-border rounded-lg focus:border-primary focus:outline-none">
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-foreground mb-2">分类 *</label>
+                        <select id="itemCategory" required
+                                class="w-full px-4 py-2 border border-border rounded-lg focus:border-primary focus:outline-none">
+                        </select>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-foreground mb-2">价格</label>
+                        <input type="number" id="itemPrice" step="0.1"
+                               class="w-full px-4 py-2 border border-border rounded-lg focus:border-primary focus:outline-none">
+                    </div>
+                    
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-foreground mb-2">图片</label>
+                        <input type="file" id="itemImage" accept="image/*"
+                               class="w-full px-4 py-2 border border-border rounded-lg">
+                    </div>
+                    
+                    <div class="flex gap-4">
+                        <button type="submit" class="flex-1 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                            保存
+                        </button>
+                        <button type="button" onclick="closeModal()" class="flex-1 px-6 py-3 bg-muted text-foreground rounded-lg hover:bg-muted/80 transition-colors">
+                            取消
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分类管理模态框 -->
+    <div id="categoryModalOverlay" class="modal-overlay fixed inset-0 bg-black/50 hidden opacity-0 flex items-center justify-center z-50">
+        <div class="modal-content bg-white rounded-2xl shadow-xl max-w-2xl w-full mx-4 transform scale-95 max-h-[80vh] overflow-hidden">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-foreground">分类管理</h2>
+                    <button onclick="closeCategoryModal()" class="text-foreground/50 hover:text-foreground">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                
+                <div class="flex gap-4 mb-6">
+                    <button onclick="openAddCategoryForm()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                        添加分类
+                    </button>
+                </div>
+                
+                <!-- 添加/编辑分类表单 -->
+                <div id="categoryForm" class="hidden mb-6 p-4 bg-muted rounded-lg">
+                    <form onsubmit="saveCategory(event)">
+                        <input type="hidden" id="categoryId">
+                        <div class="flex gap-4">
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium text-foreground mb-2">分类名称 *</label>
+                                <input type="text" id="categoryName" required
+                                       class="w-full px-4 py-2 border border-border rounded-lg focus:border-primary focus:outline-none">
+                            </div>
+                            <div class="w-32">
+                                <label class="block text-sm font-medium text-foreground mb-2">编号</label>
+                                <input type="text" id="categoryCode"
+                                       class="w-full px-4 py-2 border border-border rounded-lg focus:border-primary focus:outline-none">
+                            </div>
+                            <div class="flex items-end gap-2">
+                                <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
+                                    保存
+                                </button>
+                                <button type="button" onclick="closeCategoryForm()" class="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 transition-colors">
+                                    取消
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- 分类列表 -->
+                <div class="overflow-x-auto max-h-[50vh]">
+                    <table class="w-full">
+                        <thead class="bg-muted sticky top-0">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-sm font-medium text-foreground">ID</th>
+                                <th class="px-4 py-3 text-left text-sm font-medium text-foreground">编号</th>
+                                <th class="px-4 py-3 text-left text-sm font-medium text-foreground">分类名称</th>
+                                <th class="px-4 py-3 text-left text-sm font-medium text-foreground">货品数量</th>
+                                <th class="px-4 py-3 text-left text-sm font-medium text-foreground">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="categoriesTable">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        const perPage = 20;
+        let categoriesList = [];
+
+        async function loadCategories() {
+            const response = await fetch('/api/categories');
+            const data = await response.json();
+            categoriesList = data.categories;
+            
+            const filterSelect = document.getElementById('categoryFilter');
+            const formSelect = document.getElementById('itemCategory');
+            
+            filterSelect.innerHTML = '<option value="">所有分类</option>';
+            formSelect.innerHTML = '';
+            
+            categoriesList.forEach(cat => {
+                filterSelect.innerHTML += `<option value="${cat.id}">${cat.name} (${cat.item_count})</option>`;
+                formSelect.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+            });
+        }
+
+        function openCategoryModal() {
+            loadCategoriesTable();
+            showCategoryModal();
+        }
+
+        function showCategoryModal() {
+            const overlay = document.getElementById('categoryModalOverlay');
+            const content = overlay.querySelector('.modal-content');
+            
+            overlay.classList.remove('hidden');
+            overlay.style.opacity = '1';
+            content.style.transform = 'scale(1)';
+        }
+
+        function closeCategoryModal() {
+            const overlay = document.getElementById('categoryModalOverlay');
+            const content = overlay.querySelector('.modal-content');
+            
+            overlay.style.opacity = '0';
+            content.style.transform = 'scale(95)';
+            
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+                closeCategoryForm();
+            }, 300);
+        }
+
+        async function loadCategoriesTable() {
+            const response = await fetch('/api/categories');
+            const data = await response.json();
+            
+            const tbody = document.getElementById('categoriesTable');
+            tbody.innerHTML = '';
+            
+            data.categories.forEach(cat => {
+                tbody.innerHTML += `
+                    <tr class="border-b border-border hover:bg-muted/50 transition-colors">
+                        <td class="px-4 py-3 text-foreground">${cat.id}</td>
+                        <td class="px-4 py-3 text-foreground">${cat.code || '-'}</td>
+                        <td class="px-4 py-3 font-medium text-foreground">${cat.name}</td>
+                        <td class="px-4 py-3 text-foreground">${cat.item_count}</td>
+                        <td class="px-4 py-3 flex gap-2">
+                            <button onclick="editCategory(${cat.id}, '${cat.name}', '${cat.code || ''}')"
+                                    class="px-3 py-1 bg-accent text-white rounded hover:bg-accent/80 transition-colors text-sm">
+                                编辑
+                            </button>
+                            <button onclick="deleteCategory(${cat.id}, ${cat.item_count})"
+                                    class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors text-sm"
+                                    ${cat.item_count > 0 ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>
+                                删除
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function openAddCategoryForm() {
+            document.getElementById('categoryId').value = '';
+            document.getElementById('categoryName').value = '';
+            document.getElementById('categoryCode').value = '';
+            document.getElementById('categoryForm').classList.remove('hidden');
+        }
+
+        function editCategory(id, name, code) {
+            document.getElementById('categoryId').value = id;
+            document.getElementById('categoryName').value = name;
+            document.getElementById('categoryCode').value = code;
+            document.getElementById('categoryForm').classList.remove('hidden');
+        }
+
+        function closeCategoryForm() {
+            document.getElementById('categoryForm').classList.add('hidden');
+        }
+
+        async function saveCategory(e) {
+            e.preventDefault();
+            
+            const categoryId = document.getElementById('categoryId').value;
+            const categoryName = document.getElementById('categoryName').value;
+            const categoryCode = document.getElementById('categoryCode').value;
+            
+            try {
+                if (categoryId) {
+                    const response = await fetch(`/api/categories/${categoryId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            name: categoryName,
+                            code: categoryCode
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const data = await response.json();
+                        throw new Error(data.error);
+                    }
+                    
+                    alert('分类更新成功');
+                } else {
+                    const response = await fetch('/api/categories', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            name: categoryName,
+                            code: categoryCode
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const data = await response.json();
+                        throw new Error(data.error);
+                    }
+                    
+                    alert('分类添加成功');
+                }
+                
+                closeCategoryForm();
+                loadCategoriesTable();
+                loadCategories();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function deleteCategory(categoryId, itemCount) {
+            if (itemCount > 0) {
+                alert(`该分类下有${itemCount}个货品，无法删除`);
+                return;
+            }
+            
+            if (!confirm('确定删除此分类？')) return;
+            
+            try {
+                const response = await fetch(`/api/categories/${categoryId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error);
+                }
+                
+                alert('分类删除成功');
+                loadCategoriesTable();
+                loadCategories();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        document.getElementById('categoryModalOverlay').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('categoryModalOverlay')) {
+                closeCategoryModal();
+            }
+        });
+
+        async function loadCategoriesOld() {
+            const response = await fetch('/api/categories');
+            const data = await response.json();
+            
+            const filterSelect = document.getElementById('categoryFilter');
+            const formSelect = document.getElementById('itemCategory');
+            
+            filterSelect.innerHTML = '<option value="">所有分类</option>';
+            formSelect.innerHTML = '';
+            
+            data.categories.forEach(cat => {
+                filterSelect.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+                formSelect.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+            });
+        }
+
+        async function loadItems() {
+            const search = document.getElementById('searchInput').value;
+            const categoryId = document.getElementById('categoryFilter').value;
+            
+            const params = new URLSearchParams({
+                page: currentPage,
+                per_page: perPage,
+                search: search,
+                category_id: categoryId || ''
+            });
+            
+            const response = await fetch(`/api/items?${params}`);
+            const data = await response.json();
+            
+            renderTable(data.items);
+            renderPagination(data.total);
+        }
+
+        function renderTable(items) {
+            const tbody = document.getElementById('itemsTable');
+            tbody.innerHTML = '';
+            
+            items.forEach(item => {
+                const imageUrl = item.image_path ? `/images/${item.image_path.split('/').pop()}` : '';
+                const imageCell = imageUrl 
+                    ? `<img src="${imageUrl}" class="w-16 h-16 object-cover rounded-lg">`
+                    : `<div class="w-16 h-16 bg-muted rounded-lg flex items-center justify-center text-muted/50">无图片</div>`;
+                
+                tbody.innerHTML += `
+                    <tr class="border-b border-border hover:bg-muted/50 transition-colors">
+                        <td class="px-4 py-3">${imageCell}</td>
+                        <td class="px-4 py-3 font-medium text-foreground">${item.item_code}</td>
+                        <td class="px-4 py-3 text-foreground/70">${item.category}</td>
+                        <td class="px-4 py-3 text-foreground">${item.price ? '¥' + item.price : '-'}</td>
+                        <td class="px-4 py-3 flex gap-2">
+                            <button onclick="openEditModal(${item.id})" 
+                                    class="px-3 py-1 bg-accent text-white rounded hover:bg-accent/80 transition-colors">
+                                编辑
+                            </button>
+                            <button onclick="deleteItem(${item.id})" 
+                                    class="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors">
+                                删除
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function renderPagination(total) {
+            const totalPages = Math.ceil(total / perPage);
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+            
+            if (totalPages <= 1) return;
+            
+            for (let i = 1; i <= totalPages; i++) {
+                const btnClass = i === currentPage 
+                    ? 'px-4 py-2 bg-primary text-white rounded-lg' 
+                    : 'px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 transition-colors';
+                
+                pagination.innerHTML += `<button onclick="changePage(${i})" class="${btnClass}">${i}</button>`;
+            }
+        }
+
+        function changePage(page) {
+            currentPage = page;
+            loadItems();
+        }
+
+        function openAddModal() {
+            document.getElementById('modalTitle').textContent = '添加货品';
+            document.getElementById('itemId').value = '';
+            document.getElementById('itemForm').reset();
+            showModal();
+        }
+
+        async function openEditModal(itemId) {
+            const response = await fetch(`/api/items/${itemId}`);
+            const item = await response.json();
+            
+            document.getElementById('modalTitle').textContent = '编辑货品';
+            document.getElementById('itemId').value = item.id;
+            document.getElementById('itemCode').value = item.item_code;
+            document.getElementById('itemCategory').value = item.category_id;
+            document.getElementById('itemPrice').value = item.price || '';
+            document.getElementById('itemImage').value = '';
+            
+            showModal();
+        }
+
+        function showModal() {
+            const overlay = document.getElementById('modalOverlay');
+            const content = document.querySelector('.modal-content');
+            
+            overlay.classList.remove('hidden');
+            overlay.style.opacity = '1';
+            content.style.transform = 'scale(1)';
+        }
+
+        function closeModal() {
+            const overlay = document.getElementById('modalOverlay');
+            const content = document.querySelector('.modal-content');
+            
+            overlay.style.opacity = '0';
+            content.style.transform = 'scale(95)';
+            
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+            }, 300);
+        }
+
+        document.getElementById('itemForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const itemId = document.getElementById('itemId').value;
+            const itemCode = document.getElementById('itemCode').value;
+            const categoryId = document.getElementById('itemCategory').value;
+            const price = document.getElementById('itemPrice').value;
+            const imageFile = document.getElementById('itemImage').files[0];
+            
+            try {
+                if (itemId) {
+                    const response = await fetch(`/api/items/${itemId}`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            item_code: itemCode,
+                            category_id: parseInt(categoryId),
+                            price: parseFloat(price) || null
+                        })
+                    });
+                    
+                    if (!response.ok) throw new Error('更新失败');
+                    
+                    if (imageFile) {
+                        const formData = new FormData();
+                        formData.append('image', imageFile);
+                        const imgResponse = await fetch(`/api/items/${itemId}/image`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        if (!imgResponse.ok) throw new Error('图片上传失败');
+                    }
+                    
+                    alert('货品更新成功');
+                } else {
+                    const response = await fetch('/api/items', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            item_code: itemCode,
+                            category_id: parseInt(categoryId),
+                            price: parseFloat(price) || null
+                        })
+                    });
+                    
+                    if (!response.ok) throw new Error('添加失败');
+                    
+                    const data = await response.json();
+                    
+                    if (imageFile) {
+                        const formData = new FormData();
+                        formData.append('image', imageFile);
+                        const imgResponse = await fetch(`/api/items/${data.id}/image`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        if (!imgResponse.ok) throw new Error('图片上传失败');
+                    }
+                    
+                    alert('货品添加成功');
+                }
+                
+                closeModal();
+                loadItems();
+            } catch (error) {
+                alert(error.message);
+            }
+        });
+
+        async function deleteItem(itemId) {
+            if (!confirm('确定删除此货品？')) return;
+            
+            try {
+                const response = await fetch(`/api/items/${itemId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) throw new Error('删除失败');
+                
+                alert('货品删除成功');
+                loadItems();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        document.getElementById('searchInput').addEventListener('input', () => {
+            currentPage = 1;
+            loadItems();
+        });
+
+        document.getElementById('categoryFilter').addEventListener('change', () => {
+            currentPage = 1;
+            loadItems();
+        });
+
+        document.getElementById('modalOverlay').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('modalOverlay')) {
+                closeModal();
+            }
+        });
+
+        function exportExcel() {
+            const search = document.getElementById('searchInput').value;
+            const categoryId = document.getElementById('categoryFilter').value;
+            
+            const params = new URLSearchParams();
+            params.append('images', 'true');
+            if (search) params.append('search', search);
+            if (categoryId) params.append('category_id', categoryId);
+            
+            window.location.href = `/api/export?${params.toString()}`;
+        }
+
+        function exportExcelNoImages() {
+            const search = document.getElementById('searchInput').value;
+            const categoryId = document.getElementById('categoryFilter').value;
+            
+            const params = new URLSearchParams();
+            params.append('images', 'false');
+            if (search) params.append('search', search);
+            if (categoryId) params.append('category_id', categoryId);
+            
+            window.location.href = `/api/export?${params.toString()}`;
+        }
+
+function exportCSV() {
+            const search = document.getElementById('searchInput').value;
+            const categoryId = document.getElementById('categoryFilter').value;
+            
+            const params = new URLSearchParams();
+            if (search) params.append('search', search);
+            if (categoryId) params.append('category_id', categoryId);
+            
+            window.location.href = `/api/export/csv?${params.toString()}`;
+        }
+
+        // 页面加载时初始化
+        loadCategories();
+        loadItems();
+    </script>
+</body>
+</html>
